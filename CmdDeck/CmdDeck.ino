@@ -110,11 +110,17 @@ int row[] = {R1,R2,R3};
 struct Button {
   char filename[25] = "";
   bool modified = false;
+  int x = 0;
+  int y = 0;
+  int w = 1;
+  int h = 1;
 };
 
 struct Buttons {
     Button buttons[ROWS*COLS];
+    int count = 0;
     bool modified = false;
+    bool layoutChanged = true;
 };
 
 Buttons theButtons;
@@ -225,32 +231,41 @@ void retrieveTouch()
 
 
 
-int button = 0;
+//int button = 0;
 
 // Drawing functions
 ////////////////////
 
-void drawBoxes(){
-  for(int j = 0; j<ROWS; j++){
-    for(int i = 0; i<COLS; i++){ 
-      tft.drawRect(col[i],row[j],BOXSIZE,BOXSIZE,WHITE);
-    }
+void drawBoxes(int sel = -1, bool clear=false) {
+  int x, y, w, h;
+  int button;
+  if(clear) {
+    // TODO: clear button area
+  }
+  for(button = 0; button < theButtons.count; button++) {
+    
+    x = col[theButtons.buttons[button].x];
+    y = row[theButtons.buttons[button].y];
+    w = theButtons.buttons[button].w;
+    h = theButtons.buttons[button].h;
+    
+    tft.drawRect(x, y, BOXSIZE * w + padding * (w - 1), BOXSIZE * h + padding * (h - 1), button == sel ? RED : WHITE);
   }
 
   tft.drawRect(edge,edge,tft.width()-padding,info-edge ,WHITE);
-  
 }
 
 void bmp(bool force=false){
-  button = 0;
-  if(force || theButtons.modified) {
-    for(int j = 0; j<ROWS; j++){
-      for(int i = 0; i<COLS; i++){
-        if(force || theButtons.buttons[button].modified) {
-          bmpDraw(theButtons.buttons[button].filename,col[i]+1,row[j]+1);
-          theButtons.buttons[button].modified = false;
-        }
-        button = button+1;
+  int button;
+  if(force || theButtons.modified || theButtons.layoutChanged) {
+    if(theButtons.layoutChanged) {
+      drawBoxes(-1, true);
+      theButtons.layoutChanged = false;
+    }
+    for(button = 0; button < theButtons.count; button++) {
+      if(force || theButtons.buttons[button].modified) {
+        bmpDraw(theButtons.buttons[button].filename,col[theButtons.buttons[button].x]+1,row[theButtons.buttons[button].y]+1);
+        theButtons.buttons[button].modified = false;
       }
     }
     theButtons.modified = false;
@@ -301,17 +316,19 @@ void updateInfo(){
 }
 
 void chooseButton(){
+  int x, y, w, h;
+  int button;
   if (pressed == 1 and lastpressed == 0) {
-    for(int j = 0; j<ROWS; j++){
-      for(int i = 0; i<COLS; i++){
-        if(X > col[i] &&  X < col[i] + BOXSIZE){
-          if(Y > row[j] && Y < row[j] + BOXSIZE){
-            
-            drawBoxes();
-            tft.drawRect(col[i],row[j],BOXSIZE,BOXSIZE,RED);
-            Serial.println((j*COLS)+i+1);
-          }
-        }
+    for(button = 0; button < theButtons.count; button++) {
+      x = col[theButtons.buttons[button].x];
+      y = row[theButtons.buttons[button].y];
+      w = theButtons.buttons[button].w;
+      h = theButtons.buttons[button].h;
+      
+      if(X > x && X < x + BOXSIZE * w + padding * (w - 1) && Y > y && Y < y + BOXSIZE * h + padding * (h - 1)) {
+        drawBoxes(button);
+        Serial.println(button+1);
+        break;
       }
     }
   }
@@ -487,6 +504,7 @@ bool freeze = false;
 
 bool processButtonCmd(char* cmd) {
   char *start = 0;
+  int button;
 
   if(cmd[1] == ' ' && cmd[0] >= '1' && cmd[0] <= '9') {
     button = cmd[0] - '1';
@@ -503,6 +521,29 @@ bool processButtonCmd(char* cmd) {
   // Set button filename and set modified stated
   strbufcpy(theButtons.buttons[button].filename, start, 25);
   theButtons.buttons[button].modified = true;
+  theButtons.modified = true;
+  return true;
+}
+
+bool processAddButton(char* cmd) {
+  if(theButtons.count == 15) {
+    return false; // Can't add any more buttons
+  }
+
+  // Remainder of command is string of XYWH
+  if(strlen(cmd) != 4) {
+    return false; // Incorrect number of parameters
+  }
+
+  int idx = theButtons.count;
+  int x = theButtons.buttons[idx].x = constrain(cmd[0] - '1', 0, 4);
+  int y = theButtons.buttons[idx].y = constrain(cmd[1] - '1', 0, 2);
+  theButtons.buttons[idx].w = constrain(cmd[2] - '0', 1, 5 - x);
+  theButtons.buttons[idx].h = constrain(cmd[3] - '0', 1, 3 - y);
+  theButtons.buttons[idx].modified = true;
+
+  theButtons.count++;
+  theButtons.layoutChanged = true;
   theButtons.modified = true;
   return true;
 }
@@ -535,6 +576,13 @@ void processCmd(char* cmd) {
   else if(strncmp(cmd, "button", 6) == 0) {
     result = processButtonCmd(cmd + 6);
   }
+  else if(strncmp(cmd, "addbutton ", 10) == 0) {
+    result = processAddButton(cmd + 10); 
+  }
+  else if(strcmp(cmd, "clearbuttons") == 0) {
+    theButtons.count = 0;
+    theButtons.modified = true;
+  }
   else if(strcmp(cmd, "reset") == 0) {
     resetFunc();
   }
@@ -554,6 +602,15 @@ void processCmd(char* cmd) {
 //////////////////////////
 
 void setup() {
+  // Set up defualt buttons
+  for(int button = 0; button < 15; button++) {
+    theButtons.buttons[button].x = button % 5;
+    theButtons.buttons[button].y = button / 5;
+    theButtons.buttons[button].w = theButtons.buttons[button].h = 1;
+  }
+  theButtons.count = 15;
+
+
   Serial.begin(9600);
   Serial.setTimeout(10); // This speeds command response time up a bit.
 
