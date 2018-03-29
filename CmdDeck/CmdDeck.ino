@@ -120,7 +120,9 @@ struct Buttons {
     Button buttons[ROWS*COLS];
     int count = 0;
     bool modified = false;
-    bool layoutChanged = true;
+    bool cleared = false;
+    bool added = false;
+    int current = -1;
 };
 
 Buttons theButtons;
@@ -236,12 +238,10 @@ void retrieveTouch()
 // Drawing functions
 ////////////////////
 
-void drawBoxes(int sel = -1, bool clear=false) {
+void drawBoxes() {
   int x, y, w, h;
   int button;
-  if(clear) {
-    // TODO: clear button area
-  }
+
   for(button = 0; button < theButtons.count; button++) {
     
     x = col[theButtons.buttons[button].x];
@@ -249,7 +249,7 @@ void drawBoxes(int sel = -1, bool clear=false) {
     w = theButtons.buttons[button].w;
     h = theButtons.buttons[button].h;
     
-    tft.drawRect(x, y, BOXSIZE * w + padding * (w - 1), BOXSIZE * h + padding * (h - 1), button == sel ? RED : WHITE);
+    tft.drawRect(x, y, BOXSIZE * w + padding * (w - 1), BOXSIZE * h + padding * (h - 1), theButtons.current == button ? RED : WHITE);
   }
 
   tft.drawRect(edge,edge,tft.width()-padding,info-edge ,WHITE);
@@ -257,17 +257,23 @@ void drawBoxes(int sel = -1, bool clear=false) {
 
 void bmp(bool force=false){
   int button;
-  if(force || theButtons.modified || theButtons.layoutChanged) {
-    if(theButtons.layoutChanged) {
-      drawBoxes(-1, true);
-      theButtons.layoutChanged = false;
+  if(force || theButtons.modified || theButtons.added || theButtons.cleared) {
+    if(theButtons.cleared) {
+      tft.fillRect(0, row[0], tft.width(), tft.height(), BLACK);
     }
+
+    if(theButtons.added || theButtons.cleared) {
+      drawBoxes();
+    }
+
     for(button = 0; button < theButtons.count; button++) {
-      if(force || theButtons.buttons[button].modified) {
+      if(force || theButtons.buttons[button].modified || theButtons.cleared) {
         bmpDraw(theButtons.buttons[button].filename,col[theButtons.buttons[button].x]+1,row[theButtons.buttons[button].y]+1);
         theButtons.buttons[button].modified = false;
       }
     }
+    theButtons.added = false;
+    theButtons.cleared = false;
     theButtons.modified = false;
   }
 }
@@ -326,7 +332,8 @@ void chooseButton(){
       h = theButtons.buttons[button].h;
       
       if(X > x && X < x + BOXSIZE * w + padding * (w - 1) && Y > y && Y < y + BOXSIZE * h + padding * (h - 1)) {
-        drawBoxes(button);
+        theButtons.current = button;
+        drawBoxes();
         Serial.println(button+1);
         break;
       }
@@ -519,7 +526,8 @@ bool processButtonCmd(char* cmd) {
   }
 
   // Set button filename and set modified stated
-  strbufcpy(theButtons.buttons[button].filename, start, 25);
+  strbufcpy(theButtons.buttons[button].filename, start, 20);
+  strcat(theButtons.buttons[button].filename, ".bmp");
   theButtons.buttons[button].modified = true;
   theButtons.modified = true;
   return true;
@@ -543,8 +551,8 @@ bool processAddButton(char* cmd) {
   theButtons.buttons[idx].modified = true;
 
   theButtons.count++;
-  theButtons.layoutChanged = true;
   theButtons.modified = true;
+  theButtons.added = true;
   return true;
 }
 
@@ -582,6 +590,8 @@ void processCmd(char* cmd) {
   else if(strcmp(cmd, "clearbuttons") == 0) {
     theButtons.count = 0;
     theButtons.modified = true;
+    theButtons.cleared = true;
+    theButtons.current = -1;
   }
   else if(strcmp(cmd, "reset") == 0) {
     resetFunc();
