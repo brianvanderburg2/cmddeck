@@ -74,6 +74,9 @@
 //Size of key containers 70px
 #define BOXSIZE 60
 
+// Foward declaractions
+void bmpDraw(char* filename, int x, int y, int w, int h);
+
 // Global Variables
 ///////////////////
 
@@ -83,54 +86,221 @@ Elegoo_TFTLCD tft(LCD_CS, LCD_CD, LCD_WR, LCD_RD, LCD_RESET);
 
 
 //Space between squares
-double padding = 4;
-double edge = padding/2;
+const double padding = 4;
+const double edge = padding/2;
 
-double info = padding + BOXSIZE*2/3 + padding;
+const double info = padding + BOXSIZE*2/3 + padding;
 
-double C1 = edge;
-double C2 = C1 + BOXSIZE + padding;
-double C3 = C2 + BOXSIZE + padding;
-double C4 = C3 + BOXSIZE + padding;
-double C5 = C4 + BOXSIZE + padding;
+const double C1 = edge;
+const double C2 = C1 + BOXSIZE + padding;
+const double C3 = C2 + BOXSIZE + padding;
+const double C4 = C3 + BOXSIZE + padding;
+const double C5 = C4 + BOXSIZE + padding;
 
-double R1 = info + edge;
-double R2 = R1 + BOXSIZE + padding;
-double R3 = R2 + BOXSIZE + padding;
-double R4 = R3 + BOXSIZE + padding;
-double R5 = R4 + BOXSIZE + padding;
+const double R1 = info + edge;
+const double R2 = R1 + BOXSIZE + padding;
+const double R3 = R2 + BOXSIZE + padding;
+const double R4 = R3 + BOXSIZE + padding;
+const double R5 = R4 + BOXSIZE + padding;
 
-int col[] = {C1,C2,C3,C4,C5}; 
-int row[] = {R1,R2,R3};
+const int col[] = {C1,C2,C3,C4,C5}; 
+const int row[] = {R1,R2,R3};
 
-// Rows and columns of buttons
 #define COLS 5
 #define ROWS 3
 
+// Buttons objects
 struct Button {
   char filename[25] = "";
   bool modified = false;
+  bool visible = true;
   int x = 0;
   int y = 0;
   int w = 1;
   int h = 1;
+
+  void draw(bool force=false, bool current=false) {
+    if(force || modified) {
+      if(visible && filename[0] != '\0') {
+        bmpDraw(filename, col[x] + 1, row[y] + 1, BOXSIZE * w + padding * (w - 1) - 2, BOXSIZE * h + padding * (h - 1) - 2);
+      }
+
+      drawBox(current);
+      modified = false;
+    }
+  }
+
+  void drawBox(bool current=false) {
+    int sx = col[x];
+    int sy = row[y];
+
+    if(visible) {
+      tft.drawRect(sx, sy, BOXSIZE * w + padding * (w - 1), BOXSIZE * h + padding * (h - 1), current ? RED : WHITE);    
+    } else {
+      tft.fillRect(sx, sy, BOXSIZE * w + padding * (w - 1), BOXSIZE * h + padding * (h - 1), BLACK);    
+    }
+  }
+
+  bool test(int _x, int _y) {
+    return (visible && _x > col[x] && _x < col[x] + BOXSIZE * w + padding * (w - 1) && _y > row[y] && _y < row[y] + BOXSIZE * h + padding * (h - 1));
+  }
+
+  void setButton(const char*  _filename) {
+    strncpy(filename, _filename, 25);
+    filename[24] = '\0';
+    modified = true;
+  }
+
+  void show(bool _show=true) {
+    visible = _show;
+    modified = true;
+  }
 };
 
 struct Buttons {
-    Button buttons[ROWS*COLS];
-    int count = 0;
-    bool modified = false;
-    bool cleared = false;
-    bool added = false;
-    int current = -1;
+  Button buttons[ROWS*COLS];
+  int count = 0;
+  bool modified = false;
+  bool cleared = false;
+  int current = -1;
+
+  bool addButton(int x, int y, int w, int h) {
+    if(count < 15) {
+      buttons[count].x = x;
+      buttons[count].y = y;
+      buttons[count].w = w;
+      buttons[count].h = h;
+      buttons[count].modified = true;
+      buttons[count].visible = true;
+      buttons[count].filename[0] = '\0';
+
+      count++;
+      modified = true;
+      return true;
+    }
+
+  return false;
+  }
+    
+  void clearButtons() {
+    count = 0;
+    cleared = true;
+    modified = true;
+    current = -1;
+  }
+    
+  bool setButton(int button, const char* filename) {
+    if(button >= 0 && button < count) {
+      buttons[button].setButton(filename);
+      modified = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  bool showButton(int button, bool show=true) {
+    if(button >= 0 && button < count) {
+      buttons[button].show(show);
+      modified = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  void draw(bool force=false) {
+    if(cleared) {
+      tft.fillRect(0, row[0], tft.width(), tft.height(), BLACK);
+    }
+
+    if(force || modified) {
+      for(int button = 0; button < count; button++) {
+        bool c = (button == current);
+        buttons[button].draw(force, button == current);
+      }
+    }
+
+    cleared = false;
+    modified = false;
+  }
+
+  void drawBoxes() {
+    for(int button = 0; button < count; button++) {
+      buttons[button].drawBox(button == current);
+    }
+  }
+
+  int select(int _x ,int _y) {
+    for(int button = 0; button < count; button++) {
+      if(buttons[button].test(_x, _y)) {
+        current = button;
+        drawBoxes();
+        return button;
+      }
+    }
+   
+    return -1;
+  }   
+
+  int select(int button) {
+    current = button;
+    drawBoxes();
+    return button;
+  }
 };
 
 Buttons theButtons;
 
-// Messages
-char msgs[3][10] = {"", "", ""};
-bool msgsModified = true;
+// Messages objects
+struct Message {
+  bool modified = false;
+  char msg[10] = "";
 
+  void setMessage(const char* _msg) {
+    strncpy(msg, _msg, 10);
+    msg[9] = '\0';
+    modified = true;
+  }
+};
+
+struct Messages {
+  Message messages[3];
+  bool modified = false;
+
+  bool setMessage(int msg, const char* text) {
+    if(msg >= 0 and msg <= 2) {
+      messages[msg].setMessage(text);
+      modified = true;
+      return true;
+    }
+
+    return false;
+  }
+
+  void draw(bool force=false) {
+    if(modified or force) {
+      tft.fillRect(edge,edge,tft.width()-padding,info-edge ,BLACK);
+      tft.drawRect(edge,edge,tft.width()-padding,info-edge ,WHITE);
+    
+      tft.setTextSize(2);
+      tft.setTextColor(WHITE);
+    
+      tft.setCursor(padding*2 ,20);
+      tft.println(messages[0].msg);
+
+      tft.setCursor((tft.width()*2)/5+(BOXSIZE*1/4),20);
+      tft.println(messages[1].msg);
+
+      tft.setCursor((tft.width()*4)/5,20);
+      tft.println(messages[2].msg);
+    }
+
+    modified = false;
+  }
+};
+
+Messages theMessages;
 
 // Helper functions
 ///////////////////
@@ -199,7 +369,7 @@ int PX, PY, PZ;
 
 void retrieveTouch()
 {
-  digitalWrite(13, HIGH);
+  digitalWrite(13, HIGH); // Not quite sure what this is fore
   TSPoint p = ts.getPoint();
   digitalWrite(13, LOW);
 
@@ -238,105 +408,11 @@ void retrieveTouch()
 // Drawing functions
 ////////////////////
 
-void drawBoxes() {
-  int x, y, w, h;
-  int button;
-
-  for(button = 0; button < theButtons.count; button++) {
-    
-    x = col[theButtons.buttons[button].x];
-    y = row[theButtons.buttons[button].y];
-    w = theButtons.buttons[button].w;
-    h = theButtons.buttons[button].h;
-    
-    tft.drawRect(x, y, BOXSIZE * w + padding * (w - 1), BOXSIZE * h + padding * (h - 1), theButtons.current == button ? RED : WHITE);
-  }
-
-  tft.drawRect(edge,edge,tft.width()-padding,info-edge ,WHITE);
-}
-
-void bmp(bool force=false){
-  int button;
-  if(force || theButtons.modified || theButtons.added || theButtons.cleared) {
-    if(theButtons.cleared) {
-      tft.fillRect(0, row[0], tft.width(), tft.height(), BLACK);
-    }
-
-    if(theButtons.added || theButtons.cleared) {
-      drawBoxes();
-    }
-
-    for(button = 0; button < theButtons.count; button++) {
-      if(force || theButtons.buttons[button].modified || theButtons.cleared) {
-        bmpDraw(theButtons.buttons[button].filename,col[theButtons.buttons[button].x]+1,row[theButtons.buttons[button].y]+1);
-        theButtons.buttons[button].modified = false;
-      }
-    }
-    theButtons.added = false;
-    theButtons.cleared = false;
-    theButtons.modified = false;
-  }
-}
-
-void updateInfo(){
-#ifdef DEBUG_TOUCH
-  char buf[10];
-  if ((Z > MINPRESSURE && Z < MAXPRESSURE) || msgsModified) {
-#else
-  if (msgsModified) {
-#endif
-
-    msgsModified = false;
-    
-    tft.fillRect(edge,edge,tft.width()-padding,info-edge ,BLACK);
-    tft.drawRect(edge,edge,tft.width()-padding,info-edge ,WHITE);
-    tft.setTextSize(2);
-    
-    tft.setTextColor(WHITE);
-    
-    tft.setCursor(padding*2 ,20);
-#ifdef DEBUG_TOUCH
-    itoa(PX, buf, 10);
-    tft.println(buf);
-#else
-    tft.println(msgs[0]);
-#endif
-
-    tft.setCursor((tft.width()*2)/5+(BOXSIZE*1/4),20);
-#ifdef DEBUG_TOUCH
-    itoa(PY, buf, 10);
-    tft.println(buf);
-#else
-    tft.println(msgs[1]);
-#endif
-
-    tft.setCursor((tft.width()*4)/5,20);
-#ifdef DEBUG_TOUCH
-    itoa(PZ, buf, 10);
-    tft.println(buf);
-#else
-    tft.println(msgs[2]);
-#endif
-
-  }
-}
-
-void chooseButton(){
-  int x, y, w, h;
-  int button;
+void chooseButton() {
   if (pressed == 1 and lastpressed == 0) {
-    for(button = 0; button < theButtons.count; button++) {
-      x = col[theButtons.buttons[button].x];
-      y = row[theButtons.buttons[button].y];
-      w = theButtons.buttons[button].w;
-      h = theButtons.buttons[button].h;
-      
-      if(X > x && X < x + BOXSIZE * w + padding * (w - 1) && Y > y && Y < y + BOXSIZE * h + padding * (h - 1)) {
-        theButtons.current = button;
-        drawBoxes();
-        Serial.println(button+1);
-        break;
-      }
+    int button = theButtons.select(X, Y);
+    if(button >= 0) {
+      Serial.println(button + 1);
     }
   }
 }
@@ -355,9 +431,9 @@ void chooseButton(){
 // makes loading a little faster.  20 pixels seems a
 // good balance.
 
-#define BUFFPIXEL 60
+#define BUFFPIXEL 20
 
-void bmpDraw(char *filename, int x, int y) {
+void bmpDraw(char *filename, int x, int y, int w, int h) {
 
   File     bmpFile;
   int      bmpWidth, bmpHeight;   // W+H in pixels
@@ -369,7 +445,7 @@ void bmpDraw(char *filename, int x, int y) {
   uint8_t  buffidx = sizeof(sdbuffer); // Current position in sdbuffer
   boolean  goodBmp = false;       // Set to true on valid header parse
   boolean  flip    = true;        // BMP is stored bottom-to-top
-  int      w, h, row, col;
+  int      row, col;
   uint8_t  r, g, b;
   uint32_t pos = 0, startTime = millis();
   uint8_t  lcdidx = 0;
@@ -422,10 +498,12 @@ void bmpDraw(char *filename, int x, int y) {
         }
 
         // Crop area to be loaded
-        w = bmpWidth;
-        h = bmpHeight;
+        w = (w > 0) ? min(bmpWidth, w) : bmpWidth;
+        h = (h > 0) ? min(bmpHeight, h) : bmpHeight;
+        
         if((x+w-1) >= tft.width())  w = tft.width()  - x;
         if((y+h-1) >= tft.height()) h = tft.height() - y;
+
 
         // Set TFT address window to clipped image bounds
         tft.setAddrWindow(x, y, x+w-1, y+h-1);
@@ -508,6 +586,7 @@ uint32_t read32(File f) {
 ////////////////////
 
 bool freeze = false;
+bool redraw = false;
 
 bool processButtonCmd(char* cmd) {
   char *start = 0;
@@ -526,34 +605,34 @@ bool processButtonCmd(char* cmd) {
   }
 
   // Set button filename and set modified stated
-  strbufcpy(theButtons.buttons[button].filename, start, 20);
-  strcat(theButtons.buttons[button].filename, ".bmp");
-  theButtons.buttons[button].modified = true;
-  theButtons.modified = true;
-  return true;
+  return theButtons.setButton(button, start);
 }
 
 bool processAddButton(char* cmd) {
-  if(theButtons.count == 15) {
-    return false; // Can't add any more buttons
-  }
-
   // Remainder of command is string of XYWH
   if(strlen(cmd) != 4) {
     return false; // Incorrect number of parameters
   }
 
-  int idx = theButtons.count;
-  int x = theButtons.buttons[idx].x = constrain(cmd[0] - '1', 0, 4);
-  int y = theButtons.buttons[idx].y = constrain(cmd[1] - '1', 0, 2);
-  theButtons.buttons[idx].w = constrain(cmd[2] - '0', 1, 5 - x);
-  theButtons.buttons[idx].h = constrain(cmd[3] - '0', 1, 3 - y);
-  theButtons.buttons[idx].modified = true;
+  int x = constrain(cmd[0] - '1', 0, 4);
+  int y = constrain(cmd[1] - '1', 0, 2);
+  return theButtons.addButton(x, y, constrain(cmd[2] - '0', 1, 5 - x), constrain(cmd[3] - '0', 1, 3 - y));
+}
 
-  theButtons.count++;
-  theButtons.modified = true;
-  theButtons.added = true;
-  return true;
+bool processShowHideButton(char* cmd, bool show) {
+  int button;
+
+  if(cmd[1] == '\0' && cmd[0] >= '1' && cmd[0] <= '9') {
+    button = cmd[0] - '1';
+  }
+  else if(cmd[2] == '\0' && cmd[0] == '1' && cmd[1] >= '0' && cmd[1] <='5') {
+    button = cmd[1] - '0' + 9;
+  }
+  else {
+    return false;
+  }
+
+  return theButtons.showButton(button, show);
 }
 
 void processCmd(char* cmd) {
@@ -569,29 +648,32 @@ void processCmd(char* cmd) {
   else if(strcmp(cmd, "unfreeze") == 0) {
     freeze = false;
   }
+  else if(strcmp(cmd, "redraw") == 0) {
+    redraw = true;
+  }
   else if(strncmp(cmd, "msg1 ", 4) == 0) {
-    strbufcpy(msgs[0], cmd + 4, 10);
-    msgsModified = true;
+    result = theMessages.setMessage(0, cmd + 4);
   }
   else if(strncmp(cmd, "msg2 ", 4) == 0) {
-    strbufcpy(msgs[1], cmd + 4, 10);
-    msgsModified = true;
+    result = theMessages.setMessage(1, cmd + 4);
   }
   else if(strncmp(cmd, "msg3 ", 4) == 0) {
-    strbufcpy(msgs[2],cmd + 4, 10);
-    msgsModified = true;
+    result = theMessages.setMessage(2, cmd + 4);
   }
   else if(strncmp(cmd, "button", 6) == 0) {
     result = processButtonCmd(cmd + 6);
+  }
+  else if(strncmp(cmd, "show", 4) == 0) {
+    result = processShowHideButton(cmd + 4, true);
+  }
+  else if(strncmp(cmd, "hide", 4) == 0) {
+    result = processShowHideButton(cmd + 4, false);
   }
   else if(strncmp(cmd, "addbutton ", 10) == 0) {
     result = processAddButton(cmd + 10); 
   }
   else if(strcmp(cmd, "clearbuttons") == 0) {
-    theButtons.count = 0;
-    theButtons.modified = true;
-    theButtons.cleared = true;
-    theButtons.current = -1;
+    theButtons.clearButtons();
   }
   else if(strcmp(cmd, "reset") == 0) {
     resetFunc();
@@ -614,12 +696,8 @@ void processCmd(char* cmd) {
 void setup() {
   // Set up defualt buttons
   for(int button = 0; button < 15; button++) {
-    theButtons.buttons[button].x = button % 5;
-    theButtons.buttons[button].y = button / 5;
-    theButtons.buttons[button].w = theButtons.buttons[button].h = 1;
+    theButtons.addButton(button % 5, button / 5, 1, 1);
   }
-  theButtons.count = 15;
-
 
   Serial.begin(9600);
   Serial.setTimeout(10); // This speeds command response time up a bit.
@@ -629,6 +707,7 @@ void setup() {
   
   tft.begin(identifier);
   tft.setRotation(1); //Rotate 90 degrees
+  tft.setTextWrap(false); // Prevent text wrapping.
 
   //Background color
   tft.fillScreen(BLACK);
@@ -636,7 +715,7 @@ void setup() {
   Serial.print(F("Initializing SD card..."));
   if (!SD.begin(SD_CS)) {
     Serial.println(F("failed!"));
-    strcpy(msgs[0], "NO SD");
+    theMessages.setMessage(0, "NOSD");
   }
   else {
     Serial.println(F("OK!"));
@@ -645,8 +724,10 @@ void setup() {
   //Background color
   tft.fillScreen(BLACK);
 
-  drawBoxes();
-  bmp(true);
+  theMessages.draw(true);
+  theButtons.draw(true);
+
+  Serial.println(F("READY"));
 }
 
 void loop() {
@@ -655,8 +736,10 @@ void loop() {
   if(!freeze) {
     retrieveTouch();
     chooseButton();
-    updateInfo();
-    bmp(false);
+    theMessages.draw(redraw);
+    theButtons.draw(redraw);
+
+    redraw = false;
   }
 }
 
