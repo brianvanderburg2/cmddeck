@@ -51,7 +51,8 @@
 #define TS_RIGHT 85
 #define TS_TOP 920
 
-#define MINPRESSURE 300
+// Pressing with a pen stylus tip seems to produce pressue of around 500, while a finger is around 150.
+#define MINPRESSURE 100
 #define MAXPRESSURE 1000
 
 //Color Definitons
@@ -383,12 +384,14 @@ void retrieveTouch()
   Z = p.z;
 
   lastpressed = pressed;
-  
+
   pressed = (p.z > MINPRESSURE && p.z < MAXPRESSURE) ? true : false;
   if(pressed) {
     pressedtime = millis();
   }
   else if(millis() - pressedtime < 150) {
+    // If we have been "not pressed" for less than a given time, it could be due to intermittent
+    // 0s received even while pressed.  Keep state as "pressed" until exceeding that time.
     pressed = true;
   }
 
